@@ -1,0 +1,101 @@
+<project name="BTRISExtractor" basedir="./" default="all">
+
+	<!-- Project settings -->
+	<property name="project.title" value="BTRISExtractor" />
+	<property name="project.jar.file" value="BTRISExtractor.jar" />
+	<property name="dbscript.zip.file" value="v1.0.4tov1.1BTRIS.zip" />
+	<property name="deploy.zip.file" value="BTRISExtractorDeploy.zip" />
+
+	<property name="src.dir" value="java" />
+	<property name="build.dir" value="build" />
+	<property name="dist.dir" value="dist" />
+	<property name="resource.dir" value="resources" />
+	<property name="dbScript.dir" value="Oracle\dbupdates" />
+		
+
+
+	<path id="class.path">
+		<fileset dir="lib">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+
+
+	<!-- Check timestamp on files -->
+	<target name="prepare">
+		<tstamp />
+	</target>
+
+
+	<!-- No Longer needed
+	<target name="resources">
+		<copy todir="${build.dir}" includeEmptyDirs="no">
+			<fileset dir="${resource.dir}">
+				<patternset>
+					<include name="**/*.bat" />
+					<include name="**/*.properties" />
+				</patternset>
+			</fileset>
+		</copy>
+	</target>-->
+
+
+	<!-- Normal build of application -->
+	<target name="compile" depends="prepare">
+		<javac srcdir="${src.dir}" destdir="${build.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath refid="class.path" />
+		</javac>
+	</target>
+
+
+	<!-- Remove classes directory for clean build -->
+	<target name="clean" description="Prepare for clean build">
+		<delete dir="${build.dir}" />
+		<mkdir dir="${build.dir}" />
+	</target>
+
+
+	<!-- Build entire project -->
+	<target name="project" depends="clean,prepare,compile,mkdist,dist,zipdb,zipdeploy" />
+
+	<!-- Create binary distribution -->
+	<target name="dist" description="Create binary distribution">
+
+		<delete dir="${dist.dir}" />
+		<mkdir dir="${dist.dir}" />
+
+		<jar basedir="${build.dir}" destfile="${dist.dir}/${project.jar.file}" 
+			includes="*.class" manifest="${resource.dir}/Manifest.txt"> 
+		</jar>
+
+	</target>
+
+	<target name="mkdist" description="Create binary distribution directory">
+
+		<delete dir="${dist.dir}" />
+		<mkdir dir="${dist.dir}" />
+
+	</target>
+	
+	<target name="zipdb" description="Create zip of database object scripts">
+
+		<zip basedir="${dbScript.dir}" destfile="${dist.dir}/${dbscript.zip.file}">
+	    </zip>
+
+	</target>
+
+	<target name="zipdeploy" description="Create zip of WAR and supporting ZIPs">
+
+		<zip destfile="${dist.dir}/${deploy.zip.file}">
+			<zipfileset dir="${dist.dir}"     includes="${project.jar.file}"/>
+    		<zipfileset dir="${dist.dir}"     includes="${dbscript.zip.file}"/>
+    		<zipfileset dir="${resource.dir}" includes="BDE.properties, Run_BTRIS_JAR.bat"/>
+     		<zipfileset dir="lib" includes="*.jar"/>
+	    </zip>
+
+	</target>
+
+	<!-- Build project and create distribution-->
+	<target name="all" depends="project" />
+
+</project>

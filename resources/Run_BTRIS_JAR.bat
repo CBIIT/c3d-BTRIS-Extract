@@ -1,0 +1,1 @@
+start "BTRIS Extractor" java -jar BTRISExtractor.jar

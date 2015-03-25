@@ -1,0 +1,2 @@
+Main-Class: BTRISDataExtractorC3D
+Class-Path: sqljdbc4.jar ojdbc14.jar
