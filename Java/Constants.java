@@ -16,7 +16,7 @@ public class Constants {
 	 public static final String NameControlC3DPass       = "control.C3D.pass";
 
 	 // PRC: Property descriptions
-     public static final String DescControlCumulativeDay = "Extractor query type. Either CUMULATVIE or INCREMENTAL";
+     public static final String DescControlCumulativeDay = "Extractor query type. Either CUMULATIVE or INCREMENTAL";
 	 public static final String DescControlOutputType    = "Where Extract writes Output";
 	 public static final String DescControlQOffsetDays   = "Query Date Offset Days for NEW Results";
      public static final String DescControlSubmitPushC3DJob = "Automatically submit Oracle Job to Push Data to C3D";
