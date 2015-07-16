@@ -30,7 +30,7 @@
 
 	<!-- Normal build of application -->
 	<target name="compile" depends="prepare">
-		<javac srcdir="${src.dir}" destdir="${build.dir}" debug="true" debuglevel="lines,vars,source">
+		<javac srcdir="${src.dir}" destdir="${build.dir}" target="1.6" executable="C:\Program Files (x86)\Java\jdk1.6.0_101\bin\javac" compiler="extJavac" debug="true" debuglevel="lines,vars,source">
 			<classpath refid="class.path" />
 		</javac>
 	</target>

@@ -164,7 +164,7 @@ public class BTRISDataExtractorC3D {
 
 		String incrementalResults = "select distinct Observation_Measurable.Event_GUID as Event_GUID, "
 				+ " Observation_Measurable.Observation_GUID as Observation_GUID, "
-				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200), "
+				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
 				+ " Unit_of_Measure, Range, Primary_Date_Time, Observation_Measurable.Subject_GUID, "
 				+ " Subject.MRN, a.Value as LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
 				+ " Observation_Measurable.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
@@ -186,7 +186,7 @@ public class BTRISDataExtractorC3D {
 
 		String cumulativeResults = "select distinct Observation_Measurable.Event_GUID as Event_GUID, "
 				+ " Observation_Measurable.Observation_GUID as Observation_GUID, "
-				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200), "
+				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
 				+ " Unit_of_Measure, Range, Primary_Date_Time, Observation_Measurable.Subject_GUID, "
 				+ " Subject.MRN, a.Value as LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
 				+ " Observation_Measurable.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
@@ -311,6 +311,10 @@ public class BTRISDataExtractorC3D {
 					observNote = rsBTRIS.getString(17);  // Note
 
 					totalResultsRecords = totalResultsRecords + 1;
+					if (totalResultsRecords % 10000 == 0 ) {
+						System.out.println("Retrieved "	+ totalResultsRecords + " records from BTRIS so far...");
+                       
+					}
 					if (outType.equals("FILE") || outType.equals("BOTH")) {
 						outBuf.write(eventGuid + "\t");
 						outBuf.write(observGuid + "\t");
@@ -410,7 +414,9 @@ public class BTRISDataExtractorC3D {
 		newQueryDate.set(Calendar.SECOND, 0);
 		newQueryDate.set(Calendar.MILLISECOND, 0);
 
-		System.out.println("Query BTRIS Data from : " + newQueryDate.getTime());
+		if (extractType.equalsIgnoreCase("INCREMENTAL")) {
+			System.out.println("Query BTRIS Data from : " + newQueryDate.getTime());
+		}
 
 		System.out.println();
 		ExtractLog extractLog = new ExtractLog();
