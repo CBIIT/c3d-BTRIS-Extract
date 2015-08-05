@@ -164,9 +164,9 @@ public class BTRISDataExtractorC3D {
 
 		String incrementalResults = "select distinct Observation_Measurable.Event_GUID as Event_GUID, "
 				+ " Observation_Measurable.Observation_GUID as Observation_GUID, "
-				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
+				+ " Observation_Name_CONCEPT, Substring(Observation_Name,1,200) Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
 				+ " Unit_of_Measure, Range, Primary_Date_Time, Observation_Measurable.Subject_GUID, "
-				+ " Subject.MRN, a.Value as LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
+				+ " Subject.MRN, Substring(a.Value,1,12)  LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
 				+ " Observation_Measurable.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
 				+ " ? as QueryDate, GETDATE() as ExtractDateTime, "
 				+ " Substring(Observation_Note,1,200) as NOTE "
@@ -186,9 +186,9 @@ public class BTRISDataExtractorC3D {
 
 		String cumulativeResults = "select distinct Observation_Measurable.Event_GUID as Event_GUID, "
 				+ " Observation_Measurable.Observation_GUID as Observation_GUID, "
-				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
+				+ " Observation_Name_CONCEPT, Substring(Observation_Name,1,200) Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
 				+ " Unit_of_Measure, Range, Primary_Date_Time, Observation_Measurable.Subject_GUID, "
-				+ " Subject.MRN, a.Value as LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
+				+ " Subject.MRN, Substring(a.Value,1,12)  LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
 				+ " Observation_Measurable.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
 				+ " ? as QueryDate, GETDATE() as ExtractDateTime, "
 				+ " Substring(Observation_Note,1,200) as NOTE "
