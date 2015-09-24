@@ -51,7 +51,7 @@ public class PropertiesUtil {
 
 			props = properties;
 		}
-    //    showProperties();
+        showProperties();
 		return props;
 	}
 
@@ -90,6 +90,13 @@ public class PropertiesUtil {
 			outputStream.newLine();
 			outputStream.write(Constants.NameControlQOffsetDays + " = "
 					+ Constants.ControlQOffsetDays);
+
+			outputStream.newLine();
+			outputStream.write("! " + Constants.DescControlMRNs);
+			outputStream.newLine();
+			outputStream.write(Constants.NameControlMRNs + " = "
+					+ Constants.ControlMRNs);
+
 			outputStream.newLine();
 			outputStream.write("! " + Constants.DescControlOutputType);
 			outputStream.newLine();
@@ -157,6 +164,10 @@ outputStream.close();
 
 		errorMessage = checkProperty(properties,
 				Constants.NameControlQOffsetDays, Constants.ControlQOffsetDays,
+				errorMessage);
+
+		errorMessage = checkProperty(properties,
+				Constants.NameControlMRNs, Constants.ControlMRNs,
 				errorMessage);
 
 		errorMessage = checkProperty(properties,

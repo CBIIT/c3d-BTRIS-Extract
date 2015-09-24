@@ -7,6 +7,7 @@ public class ExtractLog {
 	private String finishDt;
 	private String queryDt;
 	private String extractType;
+	private String MRNs;
 	private String outputType;
 	private int resultCnt;
 	private int oracleJobNumber;
@@ -26,6 +27,9 @@ public class ExtractLog {
 
 	public String getExtractType() {
 		return extractType;
+	}
+	public String getMRNs() {
+		return MRNs;
 	}
 
 	public String getOutputType() {
@@ -58,6 +62,9 @@ public class ExtractLog {
 
 	public void setExtractType(String inType) {
 		this.extractType = inType;
+	}
+	public void setMRNs(String inType) {
+		this.MRNs = inType;
 	}
 
 	public void setOutputType(String inOut) {
@@ -92,6 +99,8 @@ public class ExtractLog {
 			outBuf.write("ExtractQuery = \t\t" + getQueryDt());
 			outBuf.newLine();
 			outBuf.write("ExtractType = \t\t" + getExtractType());
+			outBuf.newLine();
+			outBuf.write("MRNs = \t\t" + getMRNs());
 			outBuf.newLine();
 			outBuf.write("OutputType = \t\t" + getOutputType());
 			outBuf.newLine();
