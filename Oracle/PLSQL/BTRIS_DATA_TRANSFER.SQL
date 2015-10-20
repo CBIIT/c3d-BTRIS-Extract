@@ -1,4 +1,6 @@
-CREATE OR REPLACE PACKAGE BTRIS_DATA_TRANSFER AS
+DROP PACKAGE OPS$BDL.BTRIS_DATA_TRANSFER;
+
+CREATE OR REPLACE PACKAGE OPS$BDL.BTRIS_DATA_TRANSFER AS
   /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
   /*     Author: Patrick Conrad - Ekagra Software Technologies                         */
   /*       Date: 11/17/11                                                              */
@@ -15,7 +17,7 @@ CREATE OR REPLACE PACKAGE BTRIS_DATA_TRANSFER AS
 
   Labs_Count      Number;
 
-  Function PULL_LABS_FROM_FILE Return Number;
+ 
   Function PULL_NEW_LABS Return Number;
   Procedure PUSH_LABS_TO_LOADER;
   Procedure PULL_AND_PUSH_LABS(v_logName in Varchar2 Default NULL);
@@ -27,459 +29,315 @@ CREATE OR REPLACE PACKAGE BTRIS_DATA_TRANSFER AS
 
 END BTRIS_DATA_TRANSFER;
 /
+DROP PACKAGE BODY OPS$BDL.BTRIS_DATA_TRANSFER;
 
+CREATE OR REPLACE PACKAGE BODY OPS$BDL.BTRIS_DATA_TRANSFER
+AS
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ /*     Author: Patrick Conrad - Ekagra Software Technologies                         */
+ /*       Date: 11/17/11                                                              */
+ /*Description: This process will get lab data from the external BTRIS Data Feed      */
+ /*             and process the data prior to loading the lab data into Oracle        */
+ /*             Clinical.  It DOES NOT load data to Oracle Clinical (C3D), but rather */
+ /*             places it into the processing table for the Lab Loader.               */
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ /*  Modification History                                                             */
+ /*  10/15/2014  Katie Grant  BTRIS Extract version 2.0                               */
+ /*                           Added LAB_NOTE column to table BTRIS_LAB_TEST_RESULTS.  */
+ /*                           Added the LAB_NOTE clause on the INSERT INTO            */
+ /*                              BTRIS_LAB_RESULTS statement.                         */
+ /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-CREATE OR REPLACE PACKAGE BODY BTRIS_DATA_TRANSFER AS
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*     Author: Patrick Conrad - Ekagra Software Technologies                         */
-  /*       Date: 11/17/11                                                              */
-  /*Description: This process will get lab data from the external BTRIS Data Feed      */
-  /*             and process the data prior to loading the lab data into Oracle        */
-  /*             Clinical.  It DOES NOT load data to Oracle Clinical (C3D), but rather */
-  /*             places it into the processing table for the Lab Loader.               */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*  Modification History                                                             */
-  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  
-  Function Text2Date(v_text in varchar2) return date is
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This function is used to convert TEXT Dates to Oracle Dates           */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*  Modification History                                                             */
-  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  
-     v_hold_text varchar2(30);
-     v_hold_date date := Null;
-  Begin
-     v_hold_text := v_text;
-     If instr(v_hold_text,'.') > 0 Then
-        v_hold_text := Substr(v_hold_text,1,(instr(v_hold_text,'.')-1));
-     End If;
-        
-     v_hold_date := to_date(v_hold_text, 'YYYY-MM-DD HH24:MI:SS');
+   FUNCTION Text2Date (v_text IN VARCHAR2)   RETURN DATE
+   IS
+  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+  /*Description: This function is used to convert TEXT Dates to Oracle Dates         */
+  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+  /*  Modification History                                                           */
+  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-     return v_hold_date;
-  Exception
-     when others then
-        Log_Util.LogMessage('TEXT2DATE ERROR: Unexpected ERROR Occurred in TEXT2DATE('||v_text||').');
-        Log_Util.LogMessage('TEXT2DATE ERROR: Error Encountered: ' || SQLCODE);
-        Log_Util.LogMessage('TEXT2DATE ERROR: Error Message: ' || SQLERRM);
-        return NULL;
-  End;
+      v_hold_text   VARCHAR2 (30);
+      v_hold_date   DATE := NULL;
+   BEGIN
+      v_hold_text := v_text;
 
-  Function Date2NCIDate(v_Date in DATE) return Varchar2 is
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This function is converts a Date to a NCI Lab Loader Text Date        */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*  Modification History                                                             */
-  /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  
-     v_hold_date date := Null;
-     v_hold_text varchar2(30);
-  Begin
-     v_hold_date := v_date;
-        
-     v_hold_text := to_char(v_hold_date, 'MMDDYYHH24MI');
+      IF INSTR (v_hold_text, '.') > 0
+      THEN
+         v_hold_text := SUBSTR (v_hold_text, 1, (INSTR (v_hold_text, '.') - 1));
+      END IF;
 
-     return v_hold_text;
-  Exception
-     when others then
-        Log_Util.LogMessage('DATE2NCIDATE ERROR: Unexpected ERROR Occurred in DATE2NCIDATE.');
-        Log_Util.LogMessage('DATE2NCIDATE ERROR: Error Encountered: ' || SQLCODE);
-        Log_Util.LogMessage('DATE2NCIDATE ERROR: Error Message: ' || SQLERRM);
-        return NULL;
-  End;
+      v_hold_date := TO_DATE (v_hold_text, 'YYYY-MM-DD HH24:MI:SS');
 
-  Procedure Recheck_Unmapped_Labs(P_Method in Varchar2 Default 'HELP') is
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This procedure is used to identify labs records that were  not loaded */
-  /*             due to the 'Lab Test is unmapped' error.  These labs are examined to  */
-  /*             determine if they are now mapped. There are 2 options for this        */
-  /*             procedure.  MARK - Marks the records as 'NEW' and resets the field    */
-  /*             ERROR_REASON.  These records will then wait for the next batch of Lab */
-  /*             Loading to take place, and be included.  PROCESS - Performs the MARK  */
-  /*             function, but will process the records immediately.                   */
-  /*-----------------------------------------------------------------------------------*/
-  /* Modification History:                                                             */
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+      RETURN v_hold_date;
+   EXCEPTION
+      WHEN OTHERS
+      THEN
+         Log_Util.LogMessage('TEXT2DATE ERROR: Unexpected ERROR Occurred in TEXT2DATE('||v_text|| ').');
+         Log_Util.LogMessage ('TEXT2DATE ERROR: Error Encountered: ' || SQLCODE  );
+         Log_Util.LogMessage ('TEXT2DATE ERROR: Error Message: ' || SQLERRM);
+         RETURN NULL;
+   END;
 
-    v_Jobnumber   Number;
-    v_oc_lab_question nci_labs.oc_lab_question%type;
+   FUNCTION Date2NCIDate (v_Date IN DATE)
+      RETURN VARCHAR2
+   IS
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ /*Description: This function is converts a Date to a NCI Lab Loader Text Date        */
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ /*  Modification History                                                             */
+ /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-  Begin
-    If Log_Util.Log$LogName is null Then
-       Log_Util.LogSetName('RECHCK_UNMAPPED_' || to_char(sysdate, 'YYYYMMDD-HH24MI'),'LABLOAD');
-    End If;
+      v_hold_date   DATE := NULL;
+      v_hold_text   VARCHAR2 (30);
+   BEGIN
+      v_hold_date := v_date;
+      v_hold_text := TO_CHAR (v_hold_date, 'MMDDYYHH24MI');
+      RETURN v_hold_text;
+   EXCEPTION
+      WHEN OTHERS
+      THEN
+         Log_Util.LogMessage (
+            'DATE2NCIDATE ERROR: Unexpected ERROR Occurred in DATE2NCIDATE.'    );
+         Log_Util.LogMessage ( 'DATE2NCIDATE ERROR: Error Encountered: ' || SQLCODE );
+         Log_Util.LogMessage ('DATE2NCIDATE ERROR: Error Message: ' || SQLERRM  );
+         RETURN NULL;
+   END;
 
-    Log_Util.LogMessage('RCKUMP - Recheck Unmapped Labs Starting');
-    Log_Util.LogMessage('RCKUMP - P_METHOD = '||P_METHOD);
-
-    If Upper(P_Method) not in ('MARK','PROCESS','CHECK') Then
-        Log_Util.LogMessage('RCKUMP -  Parameter '||P_METHOD||' is not a valid Parameter.');
-        Log_Util.LogMessage('RCKUMP -  ');
-        Log_Util.LogMessage('RCKUMP -  Usage:');
-        Log_Util.LogMessage('RCKUMP -  ');
-        Log_Util.LogMessage('RCKUMP -  cdw_data_transerfer_pkg_new.Recheck_Unmapped_Labs(''CHECK''|''MARK''|''PROCESS'')');
-        Log_Util.LogMessage('RCKUMP -  ');
-        Log_Util.LogMessage('RCKUMP -  CHECK   - Reports into the log file, those labs that are NEWLY mapped and');
-        Log_Util.LogMessage('RCKUMP -            can be used in the Marking Process.');
-        Log_Util.LogMessage('RCKUMP -  MARK    - Marks the records as "NEW" and resets the field ERROR_REASON.');
-        Log_Util.LogMessage('RCKUMP -            These records will then wait for the next batch of Lab Loading');
-        Log_Util.LogMessage('RCKUMP -  PROCESS - Performs the MARK function, but will then process the records');
-        Log_Util.LogMessage('RCKUMP -            immediately.');
-        Log_Util.LogMessage('RCKUMP - ');
-    Else
-       If Upper(P_Method) in ('MARK','PROCESS','CHECK') Then
-          -- Report The LABS that will be found as having been mapped.
-           For Xrec in (SELECT count(*) Rec_Count, N.OC_STUDY, N.TEST_COMPONENT_ID, N.LABORATORY
-                         FROM nci_labs n
-                        WHERE load_flag = 'E'
-                          AND ERROR_REASON = 'Lab Test is unmapped'
-                        Group by N.OC_STUDY, N.Test_Component_id, n.laboratory) Loop
-
-              -- Find the OC Question for the Study, PASS Study to find Map Version
-              v_oc_lab_question := cdw_data_transfer_v3.FIND_LAB_QUESTION(XRec.OC_STUDY, Xrec.test_component_id, XRec.laboratory);
-
-              If v_oc_Lab_Question is not null Then
-                 -- Report that the Lab Test can be mapped.
-                 Log_Util.LogMessage('RCKUMP - Study: "'||Xrec.OC_Study||'"  Lab: "'||Xrec.Laboratory||'"  Test_ID: "'||Xrec.TEST_COMPONENT_ID||'"'||
-                                     ' can be mapped to: "'|| V_OC_LAB_QUESTION ||'"  - Records Needing Update: '||
-                                      to_char(Xrec.Rec_Count));
-
-                 If Upper(P_Method) in ('MARK','PROCESS') Then
-                    -- Mark the Records for the Study / Lab Test that were found for re-processing
-                    Update NCI_LABS n
-                       Set Load_flag    = 'N'
-                          ,Error_Reason = 'Reloaded due to: ' || Error_Reason
-                     where oc_study = XRec.OC_Study
-                       and load_flag = 'E'
-                       and error_Reason = 'Lab Test is unmapped'
-                       and n.test_component_id = Xrec.TEST_COMPONENT_ID
-                       and n.laboratory = XRec.Laboratory;
-
-                   Log_Util.LogMessage('RCKUMP - '||to_char(SQL%RowCount)||' rows successfully marked for reprocessing.');
-
-                   Commit;
-
-                 End If;
-
-              Else
-                 -- Report those Lab Tests that are still not mapped.
-                 Log_Util.LogMessage('RCKUMP - Study: "'||Xrec.OC_Study||'"  Lab: "'||Xrec.Laboratory||'"  Test_ID: "'||Xrec.TEST_COMPONENT_ID||'"'||
-                                     ' STILL NOT MAPPED - Records Needing mapped: '||to_char(Xrec.Rec_Count));
-              End If;
-
-          End Loop;
-
-
-       End If;
-       If Upper(P_Method) in ('MARK') Then
-          Log_Util.LogMessage('RCKUMP - '||'Records will be processed during next Lab Load Run.');
-       End If;
-
-       If Upper(P_Method) in ('PROCESS') Then
-
-          Log_Util.LogMessage('RCKUMP - Finished "RELOAD_ERROR_LABS"');
-          Log_Util.LogMessage('RCKUMP - Records will be processed NOW.');
-
-          --Get_Process_Load_labs('WAITING');
-
-       End If;
-
-     End If;
-
-     Log_Util.LogMessage('RCKUMP - Recheck Unmapped Labs Finished.');
-
-  End; -- Reload_Error_Labs
-
-
-  Procedure PULL_AND_PUSH_LABS(v_logName in Varchar2 Default NULL) is
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This Procedure is used to call the PULL_New_Labs function and then the*/
-  /*             PUSH_LABS_TO_LOADER procedure.  It allows for the LogName to be set at*/
-  /*             the time of execution.
-  /*-----------------------------------------------------------------------------------*/
-  /* Modification History:                                                             */
-  /*-----------------------------------------------------------------------------------*/
-
-    v_NewRecs  Number := 0;
-    v_LabRecs  Number := 0;
+   PROCEDURE PULL_AND_PUSH_LABS (v_logName IN VARCHAR2 DEFAULT NULL )
+   IS
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/*Description: This Procedure is used to call the PULL_New_Labs function and then the*/
+/*             PUSH_LABS_TO_LOADER procedure.  It allows for the LogName to be set at*/
+/*             the time of execution.                                                */
+/*-----------------------------------------------------------------------------------*/
+/* Modification History:                                                             */
+/*-----------------------------------------------------------------------------------*/
+      JobText     VARCHAR2(300);
+      v_NewRecs   NUMBER := 0;
+      JobNumber   NUMBER;
+   BEGIN
    
-  Begin
-     If v_logName is null Then
-        Log_Util.LogSetName('BTRIS_PULLPUSH_' || to_char(sysdate, 'YYYYMMDD-HH24MI'),'LABLOAD');
-     Else
-        Log_Util.LogSetName(v_logname,'LABLOAD');
-     End If;
-     Log_Util.LogMessage('PAPL - Starting "BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS".');
-     If v_logName is not null Then
-        Log_Util.LogMessage('PAPL - LogName = "' || v_logname ||'".');
-     End If;
-
-     Log_Util.LogMessage('PAPL - Calling PULL_NEW_LABS.');
-     v_NewRecs := PULL_NEW_LABS;
-  
-     Log_Util.LogMessage('PAPL - Calling PUSH_LABS_TO_LOADER.');
-     PUSH_LABS_TO_LOADER;
-     
-     Log_Util.LogMessage('PAPL - Finished "BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS".');
-      
-  End;
-
-  Procedure  Submit_PULL_AND_PUSH_LABS(JobNumber IN OUT NUMBER, v_logName IN OUT Varchar2) is
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This Procedure is used to SUBMIT as an Oracle Batch Job, the          */
-  /*             PULL_AND_PUSH_LABS procedure.
-  /*-----------------------------------------------------------------------------------*/
-  /* Modification History:                                                             */
-  /*-----------------------------------------------------------------------------------*/
-
-  h_logName  VarChar2(30);
-  --JobNumber Number;
-  JobText    VarChar2(200);
-  
-  Begin
-     If v_logName is null Then
-        v_logName := 'BTRIS_PULLPUSH_' || to_char(sysdate, 'YYYYMMDD-HH24MI');
-     End If;
-
-     JobText := 'Begin BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS('''||v_logName||'''); End;';
+      IF v_logName IS NULL
+      THEN
+         Log_Util.LogSetName ('BTRIS_PULLPUSH_'||to_char(Sysdate,'YYYYMMDD-HH24MI'),'LABLOAD');
+      ELSE
+         Log_Util.LogSetName (v_logname, 'LABLOAD');
+      END IF;
  
-     dbms_job.submit(job=>JobNumber,
-                     what=>JobText,
-                     next_date=>sysdate,
-                     interval=>NULL);
+      Log_Util.LogMessage ('PAPL - Starting "BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS".' );
+      Log_Util.LogMessage ('PAPL - LogName = "' || v_logname || '".');
 
-  End;
+      Log_Util.LogMessage ('PAPL - Calling PULL_NEW_LABS.');
+      v_NewRecs := PULL_NEW_LABS;
 
-  Function PULL_LABS_FROM_FILE Return Number IS
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This function is used to pull records from the BTRIS Raw Lab FILE     */
-  /*             and places them into the BTRIS Raw Data Table, then pulls records from*/
-  /*             the BTRIS Raw Data Table to the BTRIS Lab Result table in  preparation*/
-  /*             for loading to Oracle Clinical C3D.  The function only pulls those    */
-  /*             records that have not been pulled before, based on OBSERVATION GUID.  */
-  /*             'NEW' records are assigned a LOAD_FLAG of "N".  Function returns the  */
-  /*             count of NEW records.                                                 */
-  /*-----------------------------------------------------------------------------------*/
-  /* Modification History:                                                             */
-  /*-----------------------------------------------------------------------------------*/
+      Log_Util.LogMessage ('PAPL - Calling PUSH_LABS_TO_LOADER.');
+      PUSH_LABS_TO_LOADER;
 
-     v_rcount  number := 0;  
+      Log_Util.LogMessage ('PAPL - Finished "BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS".');
+      
+      BEGIN -- call Lab Loader job
+         /*Log_Util.LogMessage('PAPL - About to submit the LabLoader job: CDW_DATA_TRANSFER_V3.GET_PROCESS_LOAD_LABS '|| 'Log name = '||v_logName);
+         JobText := 'Begin CDW_DATA_TRANSFER_V3.GET_PROCESS_LOAD_LABS('''||v_logName||'''); End;';
+         Log_Util.LogMessage (jobtext);
+         DBMS_JOB.submit (job => JobNumber,
+                          what => JobText,
+                          next_date => SYSDATE,
+                          interval => NULL); */
+         Log_Util.LogMessage('PAPL - Calling the LabLoader job');
+         CDW_DATA_TRANSFER_V3.GET_PROCESS_LOAD_LABS(v_logname,'PROCESS_AND_LOAD');
+                          
+      END;
+   END;
 
-  BEGIN
-      If Log_Util.Log$LogName is null Then
-         Log_Util.LogSetName('BTRIS_FILE_PULL_' || to_char(sysdate, 'YYYYMMDD-HH24MI'),'LABLOAD');
-      End If;
+   PROCEDURE Submit_PULL_AND_PUSH_LABS (JobNumber   IN OUT NUMBER,
+                                        v_logName   IN OUT VARCHAR2)
+   IS
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/*Description: This Procedure is used to SUBMIT as an Oracle Batch Job, the          */
+/*             PULL_AND_PUSH_LABS procedure.                                         */
+/*-----------------------------------------------------------------------------------*/
+/* Modification History:                                                             */
+/*-----------------------------------------------------------------------------------*/
 
-     Log_Util.LogMessage('PLFF - Beginning "BTRIS_DATA_TRANSFER.PULL_LABS_FROM_FILE".');
+      JobText   VARCHAR2 (200);
+   BEGIN
+      IF v_logName IS NULL
+      THEN
+         v_logName :='BTRIS_PULLPUSH_' || TO_CHAR (SYSDATE, 'YYYYMMDD-HH24MI');
+      END IF;
 
-     --Log_Util.LogMessage('PLFF - Starting "BTRIS_LOAD_LAB_FTPDATE.LOAD_FLAT_FILE"');
-     --BTRIS_LOAD_LAB_FTPDATE.LOAD_FLAT_FILE;
-     --Log_Util.LogMessage('PLFF - Finished "BTRIS_LOAD_LAB_FTPDATE.LOAD_FLAT_FILE"');
-     Log_Util.LogMessage('PLFF - NOT IMPLEMENTED');
-     Log_Util.LogMessage('PLFF - NOT IMPLEMENTED');
-     Log_Util.LogMessage('PLFF - NOT IMPLEMENTED');
-     --Log_Util.LogMessage('PLFF - Starting "BTRIS_DATA_TRANSFER.PULL_MISSED_LABS"');
-     v_rcount := PULL_NEW_LABS;
-     Log_Util.LogMessage('PLFF - Finished "BTRIS_DATA_TRANSFER.PULL_LABS_FROM_FILE"');
+      /*
+      JobText := 'Begin BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS('''|| v_logName|| '''); End;';
 
-     Return v_Rcount;
+      DBMS_JOB.submit (job         => JobNumber,
+                       what        => JobText,
+                       next_date   => SYSDATE,
+                       interval    => NULL); */
+      BTRIS_DATA_TRANSFER.PULL_AND_PUSH_LABS(v_logName);    
+   END;
 
-  END PULL_LABS_FROM_FILE;
 
-  Function PULL_NEW_LABS Return Number IS
-  /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-  /*Description: This function is used to pull records from the BTRIS Raw Lab FILE     */
-  /*             and place them into the BTRIS Lab Results Table in  preparation for   */
-  /*             loading to Oracle Clinical C3D.  The function only pulls those records*/
-  /*             that have not been pulled before, based on OBSERVATION GUID.          */
-  /*             'NEW' records are assigned a STATUS_FLAG of "N".  Function returns the*/
-  /*             count of NEW records.                                                 */
-  /*-----------------------------------------------------------------------------------*/
-  /* Modification History: Modified to use looping                                     */
-  /*-----------------------------------------------------------------------------------*/
-         
-  v_rcount  number := 0;  
+   FUNCTION PULL_NEW_LABS  RETURN NUMBER
+   IS
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/*Description: This function is used to pull records from the BTRIS Raw Lab FILE     */
+/*             and place them into the BTRIS Lab Results Table in  preparation for   */
+/*             loading to Oracle Clinical C3D.  The function only pulls those records*/
+/*             that have not been pulled before, based on OBSERVATION GUID.          */
+/*             'NEW' records are assigned a STATUS_FLAG of "N".  Function returns the*/
+/*             count of NEW records.                                                 */
+/*-----------------------------------------------------------------------------------*/
+/* Modification History:                                   */
+/*-----------------------------------------------------------------------------------*/
 
-  BEGIN
-     Begin
-        If Log_Util.Log$LogName is null Then
-           Log_Util.LogSetName('BTRIS_TABLE_PULL_' || to_char(sysdate, 'YYYYMMDD-HH24MI'),'LABLOAD');
-        End If;
-        Log_Util.LogMessage('PNL2 - Starting BTRIS_DATA_TRANSFER.PULL_NEW_LABS');
-        Log_Util.LogMessage('PNL2 - Starting INSERT Loop');
+      v_rcount   NUMBER := 0;
+   BEGIN
+      BEGIN
+         IF Log_Util.Log$LogName IS NULL
+         THEN
+            Log_Util.LogSetName ('BTRIS_TABLE_PULL_' || TO_CHAR (SYSDATE, 'YYYYMMDD-HH24MI'),'LABLOAD' );
+         END IF;
 
-        --OPEN c_data;
-	LOOP
-           --Log_Util.LogMessage('PNL - Fetching 10000 Records.');
-	   INSERT INTO BTRIS_LAB_RESULTS
-           select BTRIS_EVENT_ID,
-	                  BTRIS_OBSERVATION_ID,
-	                  BTRIS_LAB_TEST_ID,      
-	                  LAB_TEST_NAME,          
-	                  LAB_RESULT,             
-	                  LAB_UNIT,               
-	                  LAB_RANGE,              
-	                  LAB_DATE_TXT,           
-	                  BTRIS_SUBJECT_ID,       
-	                  PATIENT_ID,             
-	                  LABTEST_CODE,           
-	                  BTRIS_CREATE_DATE,      
-	                  BTRIS_MODIFY_DATE,      
-	                  LAB_REPORT_DATE,        
-	                  EXTRACT_QUERY_DATE,     
-	                  EXTRACT_EXTRACT_DATE,
-	                  sysdate,
-	                  'N',
-	                  NULL,
-	                  NULL,
-	                  NULL
-	             from BTRIS_LAB_TEST_RESULTS a
-	            where not exists (select 'X' from BTRIS_LAB_RESULTS c
-	   	                    where a.BTRIS_OBSERVATION_ID = c.BTRIS_OBSERVATION_ID)
-	   	      and rownum < 10000;
-	
-           EXIT WHEN SQL%ROWCOUNT = 0;
-           v_rcount := v_rcount + SQL%Rowcount;
-           
-	   Log_Util.LogMessage('PNL2 - Inserted '||to_char(SQL%RowCount)||' running total '||to_char(v_rcount)||'.');
+         Log_Util.LogMessage ('PNL2 - Starting BTRIS_DATA_TRANSFER.PULL_NEW_LABS');
+         Log_Util.LogMessage ('PNL2 - Starting INSERT Loop');
 
-           Commit;
-	       
-	END LOOP;
-        
-        Commit;
-     END;
+         INSERT INTO BTRIS_LAB_RESULTS (BTRIS_EVENT_ID,
+                                        BTRIS_OBSERVATION_ID,
+                                        BTRIS_LAB_TEST_ID,
+                                        LAB_TEST_NAME,
+                                        LAB_RESULT,
+                                        LAB_UNIT,
+                                        LAB_RANGE,
+                                        LAB_DATE_TXT,
+                                        BTRIS_SUBJECT_ID,
+                                        PATIENT_ID,
+                                        LABTEST_CODE,
+                                        BTRIS_CREATE_DATE,
+                                        BTRIS_MODIFY_DATE,
+                                        LAB_REPORT_DATE,
+                                        EXTRACT_QUERY_DATE,
+                                        EXTRACT_EXTRACT_DATE,
+                                        INSERT_DATE,
+                                        STATUS_FLAG,
+                                        LOAD_DATE,
+                                        STATUS_TEXT,
+                                        STATUS_DATE,
+                                        LAB_NOTE,
+                                        C3DAncestor)
+            SELECT   BTRIS_EVENT_ID,
+                     BTRIS_OBSERVATION_ID,
+                     BTRIS_LAB_TEST_ID,
+                     LAB_TEST_NAME,
+                     LAB_RESULT,
+                     LAB_UNIT,
+                     LAB_RANGE,
+                     LAB_DATE_TXT,
+                     BTRIS_SUBJECT_ID,
+                     PATIENT_ID,
+                     LABTEST_CODE,
+                     BTRIS_CREATE_DATE,
+                     BTRIS_MODIFY_DATE,
+                     LAB_REPORT_DATE,
+                     EXTRACT_QUERY_DATE,
+                     EXTRACT_EXTRACT_DATE,
+                     SYSDATE,
+                     'N',
+                     NULL,
+                     NULL,
+                     NULL,
+                     LAB_NOTE,
+                     C3DAncestor
+              FROM   BTRIS_LAB_TEST_RESULTS a
+             WHERE   LAB_RESULT is not null
+                     AND NOT EXISTS
+                        (SELECT 'X'
+                           FROM BTRIS_LAB_RESULTS c
+                          WHERE a.BTRIS_OBSERVATION_ID = c.BTRIS_OBSERVATION_ID
+                            AND a.BTRIS_EVENT_ID       = c.BTRIS_EVENT_ID
+                            AND a.BTRIS_CREATE_DATE    = c.BTRIS_CREATE_DATE
+                            AND NVL(a.BTRIS_MODIFY_DATE,'Z') = NVL(c.BTRIS_MODIFY_DATE,'Z'));
 
-     Log_Util.LogMessage('PNL2 - '||to_char(v_rcount)||' rows inserted into "BTRIS_LAB_RESULTS" from "BTRIS_LAB_TEST_RESULTS".');
+         v_rcount := SQL%ROWCOUNT;
+         Log_Util.LogMessage('PNL2 - ' || TO_CHAR (v_rcount)
+                             || ' rows inserted into "BTRIS_LAB_RESULTS" from "BTRIS_LAB_TEST_RESULTS".');
+         COMMIT;
+      END;
 
-     Log_Util.LogMessage('PNL2 - Finished BTRIS_DATA_TRANSFER.PULL_NEW_LABS');
+      Log_Util.LogMessage ('PNL2 - Finished BTRIS_DATA_TRANSFER.PULL_NEW_LABS' );
 
-     Return v_Rcount;
+      RETURN v_Rcount;
+   END PULL_NEW_LABS;
 
-  END PULL_NEW_LABS;
-
-  PROCEDURE PUSH_LABS_TO_LOADER IS
+   PROCEDURE PUSH_LABS_TO_LOADER
+   IS   
+             
+ BEGIN
+      IF Log_Util.Log$LogName IS NULL
+      THEN
+         Log_Util.LogSetName ('BTRIS_PSH2LDR_' || TO_CHAR (SYSDATE, 'YYYYMMDD-HH24MI'),'LABLOAD' );
+      END IF;
+      Log_Util.LogMessage ('PLTL - Starting "BTRIS_DATA_TRANSFER.PUSH_LABS_TO_LOADER".' );
+      BEGIN
+      
   
-     v_rcount  number := 0;  
-     l_error_count  NUMBER := 0;
-  
-     curr_pt    number(10);
-     last_pt    number(10);
-     lab_count  number(10);
-     check_max  char(1);
+        INSERT INTO NCI_LABS (PATIENT_ID,
+                               SAMPLE_DATETIME,
+                               TEST_COMPONENT_ID,
+                               LABORATORY,
+                               LOAD_FLAG,
+                               LABTEST_NAME,
+                               RESULT,
+                               UNIT,
+                               NORMAL_VALUE,
+                               RECEIVED_DATE,
+                               TEST_CODE,
+                               CDW_RESULT_ID,
+                               C3DAncestor)
+            SELECT   PATIENT_ID,
+                     Date2NCIDate (Text2Date (LAB_DATE_TXT)),
+                     BTRIS_LAB_TEST_ID,
+                     'BTRIS' LABORATORY,
+                     'N' LOAD_FLAG,
+                     LAB_TEST_NAME,
+                     SUBSTRB (LAB_RESULT, 1, 200),   --NOTE the use of substrB
+                     LAB_UNIT,
+                     LAB_RANGE,
+                     INSERT_DATE,
+                     LABTEST_CODE,
+                     BTRIS_OBSERVATION_ID,
+                     C3DAncestor
+              FROM   BTRIS_LAB_RESULTS a
+             WHERE   STATUS_FLAG = 'N';
 
-  BEGIN
-     last_pt   := null;
-     curr_pt   := null;
-     lab_count := 0;
+         Log_Util.LogMessage('PLTL - ' || TO_CHAR (SQL%ROWCOUNT)
+                             || ' records inserted into "NCI_LABS" from "BTRIS_LAB_RESULTS".');
 
-     If Log_Util.Log$LogName is null Then
-        Log_Util.LogSetName('BTRIS_PSH2LDR_' || to_char(sysdate, 'YYYYMMDD-HH24MI'),'LABLOAD');
-     End If;
-     Log_Util.LogMessage('PLTL - Starting "BTRIS_DATA_TRANSFER.PUSH_LABS_TO_LOADER".');
+         UPDATE   BTRIS_LAB_RESULTS a
+            SET   STATUS_FLAG = 'C',
+                  STATUS_TEXT = 'Complete, moved to NCI_LABS.',
+                  load_date = SYSDATE,
+                  STATUS_DATE = SYSDATE
+          WHERE   STATUS_FLAG = 'N';
+
+         Log_Util.LogMessage('PLTL - ' || TO_CHAR (SQL%ROWCOUNT)
+                             || ' BTRIS_LAB_RESULTS records updated STATUS_FLAG to "C".');
+      EXCEPTION
+         WHEN OTHERS
+         THEN
+            Log_Util.LogMessage('PLTL - Unexepected error during INSERT OR UPDATE in BTRIS_DATA_TRANSFER.PUSH_LABS_TO_LOADER.');
+            Log_Util.LogMessage ('PLTL - Error Encountered: ' || SQLCODE);
+            Log_Util.LogMessage ('PLTL - Error Message: ' || SQLERRM);
+            RAISE;   -- stop processing, i.e. don't call LabLoader
+      END;
+
+      COMMIT;
+
+      Log_Util.LogMessage ('PLTL - Finishing "PUSH_LABS_TO_LOADER".');
+      
      
-     Log_Util.LogMessage('PLTL - Check for invalid values.');
-     begin
-
-        Log_Util.LogMessage('PLTL - Checking LABTEST_VALUES');
-
-        UPDATE BTRIS_LAB_RESULTS
-           set STATUS_FLAG = 'E', STATUS_TEXT = 'Invalid LABTEST_CODE Value', STATUS_DATE = sysdate
-         WHERE STATUS_FLAG = 'N'
-           AND LABTEST_CODE in (SELECT VALUE From BTRIS_LAB_INVALID_VALUES
-                                WHERE ATTRIBUTE = 'LABTEST_CODE');
-   
-        Log_Util.LogMessage('PLTL - '||to_char(SQL%RowCount)||' BTRIS_LAB_RESULTS records have invalid LABTEST_CODE values.');
-
-     Exception
-           when OTHERS then
-             Log_Util.LogMessage('PLTL - Unexepected error during Check LABTEST_VALUES in BTRIS_DATA_TRANSFER.PUSH_LABS_TO_LOADER.');
-             Log_Util.LogMessage('PLTL - Error Encountered: ' || SQLCODE);
-             Log_Util.LogMessage('PLTL - Error Message: ' || SQLERRM);
-     End;
-     
-     Begin
-        LOOP
-           Insert into NCI_LABS (
-                  PATIENT_ID,
-                  SAMPLE_DATETIME, 
-                  TEST_COMPONENT_ID, 
-                  LABORATORY,
-                  LOAD_FLAG,
-                  LABTEST_NAME,
-                  RESULT, 
-                  UNIT, 
-                  NORMAL_VALUE,
-                  RECEIVED_DATE,
-                  TEST_CODE, 
-                  CDW_RESULT_ID)
-           SELECT PATIENT_ID,
-	          Date2NCIDate(Text2Date(LAB_DATE_TXT)),
-	          BTRIS_LAB_TEST_ID,
-                  'BTRIS' LABORATORY,
-                  'N' LOAD_FLAG,
-                  LAB_TEST_NAME,
-                  substr(LAB_RESULT,1,200),
-                  LAB_UNIT,
-                  LAB_RANGE,
-                  INSERT_DATE,
-                  LABTEST_CODE,
-   	          BTRIS_OBSERVATION_ID
-             FROM BTRIS_LAB_RESULTS a
-            WHERE STATUS_FLAG = 'N'
-              AND not exists (select 'X' from NCI_LABS c
-   	                       where c.CDW_RESULT_ID = a.BTRIS_OBSERVATION_ID)
-   	      and rownum < 10000;
-            
-           EXIT WHEN SQL%ROWCOUNT = 0;
-           v_rcount := v_rcount + SQL%Rowcount;
-           
-	   Log_Util.LogMessage('PLTL - Inserted '||to_char(SQL%RowCount)||' running total '||to_char(v_rcount)||'.');
-
-           Commit;
-
-        END LOOP;
-        
-        Commit;
-        
-        Log_Util.LogMessage('PLTL - '|| to_char(v_rcount)||' records inserted into "NCI_LABS" from "BTRIS_LAB_RESULTS".');
-
-        begin
-           UPDATE BTRIS_LAB_RESULTS a
-              set STATUS_FLAG = 'C', STATUS_TEXT = 'Complete, moved to NCI_LABS.', load_date = sysdate, STATUS_DATE = sysdate
-            WHERE STATUS_FLAG = 'N'
-              and exists (select 'X' from NCI_LABS c
-   	                   where c.CDW_RESULT_ID = a.BTRIS_OBSERVATION_ID);
-   
-           Log_Util.LogMessage('PLTL - '||to_char(SQL%RowCount)||' BTRIS_LAB_RESULTS records updated STATUS_FLAG to "C".');
-
-        Exception
-              when OTHERS then
-                Log_Util.LogMessage('PLTL - Unexepected error during UPDATE in BTRIS_DATA_TRANSFER.PUSH_LABS_TO_LOADER.');
-                Log_Util.LogMessage('PLTL - Error Encountered: ' || SQLCODE);
-                Log_Util.LogMessage('PLTL - Error Message: ' || SQLERRM);
-        End;
-
-
-     Exception
-           when OTHERS then
-             Log_Util.LogMessage('PLTL - Unexepected error during INSERT in BTRIS_DATA_TRANSFER.PUSH_LABS_TO_LOADER.');
-             Log_Util.LogMessage('PLTL - Error Encountered: ' || SQLCODE);
-             Log_Util.LogMessage('PLTL - Error Message: ' || SQLERRM);
-     End;
-
-
-     COMMIT;
-
-     Log_Util.LogMessage('PLTL - Finishing "PUSH_LABS_TO_LOADER".');
-
-  END PUSH_LABS_TO_LOADER;
-
-
+   END PUSH_LABS_TO_LOADER;
 END BTRIS_DATA_TRANSFER;
 /
