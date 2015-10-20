@@ -119,7 +119,10 @@ public class BTRISDataExtractorC3D {
 
 			outBuf.write(dateStart + "\t");
 			outBuf.write(dateFinish + "\t");
-			outBuf.write(dateQuery + "\t");
+			if (extractType.equals("INCREMENTAL"))
+			    {outBuf.write(dateQuery + "\t"); }
+			else
+			    {outBuf.write("-------------------\t");}
 			outBuf.write(extractType + "\t");
 			outBuf.write(MRNs + "\t");
 			outBuf.write(oracleJobNumber + "\t");
@@ -177,7 +180,7 @@ public class BTRISDataExtractorC3D {
    			    + "FROM Observation_Measurable om, "
 				+ "   Subject, "
 				+ "   Observation_Measurable_EAV a, "
-				+ "   [DX_TEST].[dbo].[Concept_Association] c3d, "
+				+ "   Concept_Association c3d, "
 				+ "   RED_Ancestor_Descendant_Identity red "
 				+ "WHERE om.Subject_GUID = Subject.Subject_GUID "
 				+ "   and om.Observation_GUID = a.Observation_GUID " 

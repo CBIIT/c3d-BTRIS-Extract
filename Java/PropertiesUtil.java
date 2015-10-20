@@ -51,7 +51,7 @@ public class PropertiesUtil {
 
 			props = properties;
 		}
-        showProperties();
+        // showProperties();
 		return props;
 	}
 

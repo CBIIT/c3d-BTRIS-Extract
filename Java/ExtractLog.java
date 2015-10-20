@@ -96,7 +96,7 @@ public class ExtractLog {
 			outBuf.newLine();
 			outBuf.write("ExtractFinish = \t" + getFinishDt());
 			outBuf.newLine();
-			outBuf.write("ExtractQuery = \t\t" + getQueryDt());
+			outBuf.write("ExtractQuery = \t\t" + getQueryDt() + " Ignored if cumulative.");
 			outBuf.newLine();
 			outBuf.write("ExtractType = \t\t" + getExtractType());
 			outBuf.newLine();
