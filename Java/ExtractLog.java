@@ -7,9 +7,9 @@ public class ExtractLog {
 	private String finishDt;
 	private String queryDt;
 	private String extractType;
+	private String MRNs;
 	private String outputType;
 	private int resultCnt;
-	private int oracleJobNumber;
 	private String oracleJobLogName;
 
 	public String getStartDt() {
@@ -27,6 +27,9 @@ public class ExtractLog {
 	public String getExtractType() {
 		return extractType;
 	}
+	public String getMRNs() {
+		return MRNs;
+	}
 
 	public String getOutputType() {
 		return outputType;
@@ -36,9 +39,6 @@ public class ExtractLog {
 		return resultCnt;
 	}
 
-	public int getOracleJobNumber() {
-		return oracleJobNumber;
-	}
 
 	public String getOracleJobLogName() {
 		return oracleJobLogName;
@@ -59,6 +59,9 @@ public class ExtractLog {
 	public void setExtractType(String inType) {
 		this.extractType = inType;
 	}
+	public void setMRNs(String inType) {
+		this.MRNs = inType;
+	}
 
 	public void setOutputType(String inOut) {
 		this.outputType = inOut;
@@ -68,17 +71,9 @@ public class ExtractLog {
 		this.resultCnt = inCnt;
 	}
 
-	public void setOracleJobNumber(int inCnt) {
-		this.oracleJobNumber = inCnt;
-	}
-
 	public void setOracleJobLogName(String inCnt) {
 		this.oracleJobLogName = inCnt;
 	}
-
-//	public void getLastExtraction() {
-//		this.setStartDt(null);
-//	}
 
 	public boolean writeNewExtractLog() {
 
@@ -89,13 +84,13 @@ public class ExtractLog {
 			outBuf.newLine();
 			outBuf.write("ExtractFinish = \t" + getFinishDt());
 			outBuf.newLine();
-			outBuf.write("ExtractQuery = \t\t" + getQueryDt());
+			outBuf.write("ExtractQuery = \t\t" + getQueryDt() + " Ignored if cumulative.");
 			outBuf.newLine();
 			outBuf.write("ExtractType = \t\t" + getExtractType());
 			outBuf.newLine();
-			outBuf.write("OutputType = \t\t" + getOutputType());
+			outBuf.write("MRNs = \t\t" + getMRNs());
 			outBuf.newLine();
-			outBuf.write("OracleJobNumber = \t" + getOracleJobNumber());
+			outBuf.write("OutputType = \t\t" + getOutputType());
 			outBuf.newLine();
 			outBuf.write("OracleJobLogName = \t" + getOracleJobLogName());
 			outBuf.newLine();

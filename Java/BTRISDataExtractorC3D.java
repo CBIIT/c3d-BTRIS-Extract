@@ -17,7 +17,7 @@ import java.util.Properties;
 public class BTRISDataExtractorC3D {
 	private static String urlBTRIS, userBTRIS, passwordBTRIS = null;
 	private static String urlC3D, userC3D, passwordC3D = null;
-	private static String extractType, offsetDaysStr, outputType, submitPushC3DJob = null;
+	private static String extractType, offsetDaysStr, outputType, MRNs, submitPushC3DJob = null;
 
 
 	private static ExtractLog submitC3DPush(ExtractLog extractLog) {
@@ -28,11 +28,12 @@ public class BTRISDataExtractorC3D {
 		CallableStatement stmtC3D = null;
 		ResultSet rsC3D = null;
 		SimpleDateFormat dateFormatSQLServer = new SimpleDateFormat(
-				"yyMMdd_HH:mm:ss");
+				"yyyyMMdd_HHmm");
 		String dateStr = dateFormatSQLServer.format(Calendar.getInstance()
 				.getTime());
 		int oracleJobNumber = 0;
-		String oracleLogName = "BTRIS_PUSHC3D" + dateStr;
+		String oracleLogName = "BTRIS_C3D_" + dateStr ;
+		System.out.println("About to call btris_data_transfer.Submit_PULL_AND_PUSH_LABS");
 
 		try {
 			// Establish the connection to C3D
@@ -42,23 +43,18 @@ public class BTRISDataExtractorC3D {
 					connectionC3DUser, connectionC3DPass);
 			// System.out.println("Connected to C3D.");
 
-			String SQLC3D = "{call btris_data_transfer.Submit_PULL_AND_PUSH_LABS(?, ?)}";
+			String SQLC3D = "{call btris_data_transfer.Submit_PULL_AND_PUSH_LABS(?)}";
 
 			stmtC3D = conC3D.prepareCall(SQLC3D);
-			stmtC3D.setInt(1, 0);
-			stmtC3D.setString(2, oracleLogName);
-			stmtC3D.registerOutParameter(1, java.sql.Types.INTEGER);
-			stmtC3D.registerOutParameter(2, java.sql.Types.VARCHAR);
+			stmtC3D.setString(1, oracleLogName);
+			stmtC3D.registerOutParameter(1, java.sql.Types.VARCHAR);
 			stmtC3D.executeUpdate();
-			oracleJobNumber = stmtC3D.getInt(1);
-			oracleLogName = stmtC3D.getString(2);
+			oracleLogName = stmtC3D.getString(1);
 
 			// System.out.println("Showing the results:");
-			// System.out.println("Oracle Job Number=" + oracleJobNumber);
 			// System.out.println("Oracle Log Name='" + oracleLogName + "'");
 
-			System.out.println("Submitted BTRIS PushC3D Job, "
-					+ oracleJobNumber + ", LogName: '" + oracleLogName + "'.");
+			System.out.println("Submitted BTRIS PushC3D Job, LogName: '" + oracleLogName + "'.");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -80,7 +76,6 @@ public class BTRISDataExtractorC3D {
 				} catch (Exception e) {
 				}
 		}
-		extractLog.setOracleJobNumber(oracleJobNumber);
 		extractLog.setOracleJobLogName(oracleLogName);
 
 		return extractLog;
@@ -91,8 +86,8 @@ public class BTRISDataExtractorC3D {
 		String dateFinish = extractLog.getFinishDt();
 		String dateQuery = extractLog.getQueryDt();
 		String extractType = extractLog.getExtractType();
+		String MRNs = extractLog.getMRNs();
 		int totalLabTests = extractLog.getResultCnt();
-		int oracleJobNumber = extractLog.getOracleJobNumber();
 		boolean writeHeader = false;
 
 		extractLog.writeNewExtractLog();
@@ -112,15 +107,18 @@ public class BTRISDataExtractorC3D {
 			// false means we will be writing to the file
 			BufferedWriter outBuf = new BufferedWriter(outFile);
 			if (writeHeader) {
-				outBuf.write("Start Time\t\tStop Time\t\tQuery Date\t\tType\t\tC3D Job#\tResults");
+				outBuf.write("Start Time\t\tStop Time\t\tQuery Date\t\tType\t\tMRNs\t\tResults");
 				outBuf.newLine();
 			}
 
 			outBuf.write(dateStart + "\t");
 			outBuf.write(dateFinish + "\t");
-			outBuf.write(dateQuery + "\t");
+			if (extractType.equals("INCREMENTAL"))
+			    {outBuf.write(dateQuery + "\t"); }
+			else
+			    {outBuf.write("-------------------\t");}
 			outBuf.write(extractType + "\t");
-			outBuf.write(oracleJobNumber + "\t");
+			outBuf.write(MRNs + "\t");
 			outBuf.write(totalLabTests + "\t\t");
 			outBuf.newLine();
 
@@ -131,7 +129,7 @@ public class BTRISDataExtractorC3D {
 
 	}
 
-	private static int getWriteLabResults(String qType, String outType,
+	private static int getWriteLabResults(String qType, String outType, String MRNs,
 			Calendar inQueryDate) {
 
 		Connection conBTRIS = null;
@@ -139,6 +137,7 @@ public class BTRISDataExtractorC3D {
 		ResultSet rsBTRIS = null;
 		String eventGuid = null;
 		String observGuid = null;
+		String C3DAncestor = null;
 		String observNameConcept = null;
 		String observName = null;
 		String observValueText = null;
@@ -162,55 +161,39 @@ public class BTRISDataExtractorC3D {
 		String queryDateStr = dateFormatSQLServer.format(inQueryDate.getTime());
 		Properties extractProps = null;
 
-		String incrementalResults = "select distinct Observation_Measurable.Event_GUID as Event_GUID, "
-				+ " Observation_Measurable.Observation_GUID as Observation_GUID, "
-				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200), "
-				+ " Unit_of_Measure, Range, Primary_Date_Time, Observation_Measurable.Subject_GUID, "
-				+ " Subject.MRN, a.Value as LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
-				+ " Observation_Measurable.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
+		String queryResults =  "SELECT om.Event_GUID as Event_GUID, "
+				+ " om.Observation_GUID as Observation_GUID, "
+				+ " c3d.Value_Concept_GID c3d_mapped_ancestor, "
+				+ " Observation_Name_CONCEPT, Substring(Observation_Name,1,200) Observation_Name, Substring(Observation_Value_Text,1,200) Value_Text, "
+				+ " Unit_of_Measure, Range, Primary_Date_Time, om.Subject_GUID, "
+				+ " Subject.MRN, Substring(a.Value,1,12)  LAB_TEST_CODE, om.DX_Date_Created, "
+				+ " om.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
 				+ " ? as QueryDate, GETDATE() as ExtractDateTime, "
 				+ " Substring(Observation_Note,1,200) as NOTE "
-				+ "  from Observation_Measurable, "
-				+ "       Subject, "
-				+ "       Observation_Measurable_EAV a "
-				+ " WHERE (Observation_Measurable.DX_Date_Created >= ? "
-				+ "      OR Observation_Measurable.DX_Date_Modified >= ? )"
-				+ " and Observation_Measurable.Subject_GUID = Subject.Subject_GUID "
-				+ " and Observation_Measurable.Observation_GUID = a.Observation_GUID "
-				+ " and a.Attribute_CONCEPT = 'C139475' "
-				+ " and Observation_Measurable.Observation_Name_CONCEPT in "
-				+ "     (select Descendant_Concept "
-				+ "        from RED_Ancestor_Descendant_Identity "
-				+ "       where Ancestor_Concept = 'C90151') "
-				+ " and Observation_Measurable.Appl_Source_CD = 'C113093' ";
-
-		String cumulativeResults = "select distinct Observation_Measurable.Event_GUID as Event_GUID, "
-				+ " Observation_Measurable.Observation_GUID as Observation_GUID, "
-				+ " Observation_Name_CONCEPT, Observation_Name, Substring(Observation_Value_Text,1,200), "
-				+ " Unit_of_Measure, Range, Primary_Date_Time, Observation_Measurable.Subject_GUID, "
-				+ " Subject.MRN, a.Value as LAB_TEST_CODE, Observation_Measurable.DX_Date_Created, "
-				+ " Observation_Measurable.DX_Date_Modified, Primary_Date_Time as LabTest_Reported_Date, "
-				+ " ? as QueryDate, GETDATE() as ExtractDateTime, "
-				+ " Substring(Observation_Note,1,200) as NOTE "
-				+ "  from Observation_Measurable, "
-				+ "       Subject, "
-				+ "       Observation_Measurable_EAV a "
-				+ " WHERE Observation_Measurable.Subject_GUID = Subject.Subject_GUID "
-				+ " and Observation_Measurable.Observation_GUID = a.Observation_GUID "
-				+ " and a.Attribute_CONCEPT = 'C139475' "
-				+ " and Observation_Measurable.Observation_Name_CONCEPT in "
-				+ "     (select Descendant_Concept "
-				+ "        from RED_Ancestor_Descendant_Identity "
-				+ "        where Ancestor_Concept = 'C90151') " 
-				+ " and Observation_Measurable.Appl_Source_CD = 'C113093'";
-
-
-
-		if (qType.equals("CUMULATIVE"))
-			holdQuery = cumulativeResults;
-		else
-			holdQuery = incrementalResults;
-//		System.out.print("query="+ holdQuery);
+   			    + "FROM Observation_Measurable om, "
+				+ "   Subject, "
+				+ "   Observation_Measurable_EAV a, "
+				+ "   Concept_Association c3d, "
+				+ "   RED_Ancestor_Descendant_Identity red "
+				+ "WHERE om.Subject_GUID = Subject.Subject_GUID "
+				+ "   and om.Observation_GUID = a.Observation_GUID " 
+			    + "   and OM.Appl_Source_CD = 'C113093'  " 
+			    + "   and a.Attribute_CONCEPT = 'C139475'  "
+			    + "   and c3d.Association_GID = 28  "
+			    + "   and om.Observation_Name_CONCEPT = red.Descendant_Concept "
+			    + "   and red.Ancestor_Concept_gid = c3d.Value_Concept_GID ";
+			    if (qType.equals("INCREMENTAL"))
+			       queryResults = queryResults 
+				//            + "   and (om.DX_Date_Created >= ? "
+				//            + "        OR om.DX_Date_Modified >= ? ) " ;
+	                        + "   and (om.DX_Date_Created >= '" + queryDateStr + "'"
+	                        + "        OR om.DX_Date_Modified >= '" + queryDateStr + "') " ;
+		        if (MRNs.length() > 0)
+		            queryResults = queryResults
+		                + "   and subject.MRN in " + MRNs ;
+               
+		holdQuery = queryResults;
+		System.out.println("query="+ holdQuery);
 		
 		if (outType.equals("FILE") || outType.equals("BOTH")) {
 			try { // Write the Header Line for the FILE
@@ -218,7 +201,7 @@ public class BTRISDataExtractorC3D {
 						"BTRIS_Lab_Test_Results.txt", false);
 				BufferedWriter outBuf = new BufferedWriter(outFile);
 
-				outBuf.write("BTRIS Event ID\tBTRIS Observation ID\tBTRIS Lab Test ID\tLab Test Name\t");
+				outBuf.write("BTRIS Event ID\tBTRIS Observation ID\tBTRIS Lab Test ID\tLab Test Name\tMapped Ancestor\t");
 				outBuf.write("LabTest Result\tLabTest_UnitofMeasure\tLabTest_Range\tLabTest_DateTime\t");
 				outBuf.write("BTRIS_SubjectID\tPatientID\tLabTest_TestCode\tBTRIS_CreateDate\t");
 				outBuf.write("BTRIS_ModifyDate\tLabTest_ReportDate\tQueryDate\tNote\tExtractDate");
@@ -251,12 +234,12 @@ public class BTRISDataExtractorC3D {
 				String SQLC3D_2 = "TRUNCATE TABLE BTRIS_LAB_TEST_RESULTS";
 				String SQLC3D_3 = "INSERT INTO BTRIS_LAB_TEST_RESULTS ("
 						+ "BTRIS_EVENT_ID, BTRIS_OBSERVATION_ID, BTRIS_LAB_TEST_ID, "
-						+ "LAB_TEST_NAME, LAB_RESULT, LAB_UNIT, "
+						+ "LAB_TEST_NAME, C3DAncestor, LAB_RESULT, LAB_UNIT, "
 						+ "LAB_RANGE, LAB_DATE_TXT, BTRIS_SUBJECT_ID, "
 						+ "PATIENT_ID, LABTEST_CODE, BTRIS_CREATE_DATE, "
 						+ "BTRIS_MODIFY_DATE, LAB_REPORT_DATE, EXTRACT_QUERY_DATE, "
 						+ "EXTRACT_EXTRACT_DATE, LAB_NOTE) "
-						+ "VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+						+ "VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 				try {
 					Class.forName("oracle.jdbc.driver.OracleDriver");
 					conC3D = DriverManager.getConnection(urlC3D,
@@ -279,43 +262,43 @@ public class BTRISDataExtractorC3D {
 			}
 
 			stmtBTRIS = conBTRIS.prepareStatement(holdQuery);
-			if (qType.equals("CUMULATIVE")) {
-				stmtBTRIS.setString(1, queryDateStr);
-			} else {
-				stmtBTRIS.setString(1, queryDateStr);
-				stmtBTRIS.setString(2, queryDateStr);
-				stmtBTRIS.setString(3, queryDateStr);
-			}
+			stmtBTRIS.setString(1, queryDateStr);
+			
 			System.out.println("About to get data from BTRIS");
 			rsBTRIS = stmtBTRIS.executeQuery();
 			try {
 				while (rsBTRIS.next()) {
 					eventGuid = rsBTRIS.getString(1); // BTRIS Event ID
 					observGuid = rsBTRIS.getString(2); // Observation ID
-					observNameConcept = rsBTRIS.getString(3); // Lab Test BTRIS
-																// ID
-					observName = rsBTRIS.getString(4); // Lab Test Name
-					observValueText = rsBTRIS.getString(5); // LabResult
-					unitOfMeasure = rsBTRIS.getString(6); // Unit of Measure
-					range = rsBTRIS.getString(7); // Lab Range
-					primaryDateTime = rsBTRIS.getString(8); // Primary Lab Date
-					subjectGuid = rsBTRIS.getString(9); // BTRIS Subject ID
-					subjectMRN = rsBTRIS.getString(10); // Subject MRN
-					labTestCode = rsBTRIS.getString(11); // Lab Test COde
-					dateCreated = rsBTRIS.getString(12); // Create Date
-					dateModified = rsBTRIS.getString(13); // Modify Date
-					labTestReportedDate = rsBTRIS.getString(14); // Lab Test
+					C3DAncestor = rsBTRIS.getString(3); // C3D mapped ancestor
+					observNameConcept = rsBTRIS.getString(4); // Lab Test BTRIS ID
+					observName = rsBTRIS.getString(5); // Lab Test Name
+					observValueText = rsBTRIS.getString(6); // LabResult
+					unitOfMeasure = rsBTRIS.getString(7); // Unit of Measure
+					range = rsBTRIS.getString(8); // Lab Range
+					primaryDateTime = rsBTRIS.getString(9); // Primary Lab Date
+					subjectGuid = rsBTRIS.getString(10); // BTRIS Subject ID
+					subjectMRN = rsBTRIS.getString(11); // Subject MRN
+					labTestCode = rsBTRIS.getString(12); // Lab Test COde
+					dateCreated = rsBTRIS.getString(13); // Create Date
+					dateModified = rsBTRIS.getString(14); // Modify Date
+					labTestReportedDate = rsBTRIS.getString(15); // Lab Test
 																	// Date
-					queryDate = rsBTRIS.getString(15); // Query Date
-					extractDate = rsBTRIS.getString(16); // ExtractDate
-					observNote = rsBTRIS.getString(17);  // Note
+					queryDate = rsBTRIS.getString(16); // Query Date
+					extractDate = rsBTRIS.getString(17); // ExtractDate
+					observNote = rsBTRIS.getString(18);  // Note
 
 					totalResultsRecords = totalResultsRecords + 1;
+					if (totalResultsRecords % 10000 == 0 ) {
+						System.out.println("Retrieved "	+ totalResultsRecords + " records from BTRIS so far...");
+                       
+					}
 					if (outType.equals("FILE") || outType.equals("BOTH")) {
 						outBuf.write(eventGuid + "\t");
 						outBuf.write(observGuid + "\t");
 						outBuf.write(observNameConcept + "\t");
 						outBuf.write(observName + "\t");
+						outBuf.write(C3DAncestor + "\t");
 						outBuf.write(observValueText + "\t");
 						outBuf.write(unitOfMeasure + "\t");
 						outBuf.write(range + "\t");
@@ -340,19 +323,20 @@ public class BTRISDataExtractorC3D {
 						} else {
 							prepC3D.setString(4, observName);
 						}
-						prepC3D.setString(5, observValueText);
-						prepC3D.setString(6, unitOfMeasure);
-						prepC3D.setString(7, range);
-						prepC3D.setString(8, primaryDateTime);
-						prepC3D.setString(9, subjectGuid);
-						prepC3D.setString(10, subjectMRN);
-						prepC3D.setString(11, labTestCode);
-						prepC3D.setString(12, dateCreated);
-						prepC3D.setString(13, dateModified);
-						prepC3D.setString(14, labTestReportedDate);
-						prepC3D.setString(15, queryDate);
-						prepC3D.setString(16, extractDate);
-						prepC3D.setString(17, observNote);
+						prepC3D.setString(5, C3DAncestor);
+						prepC3D.setString(6, observValueText);
+						prepC3D.setString(7, unitOfMeasure);
+						prepC3D.setString(8, range);
+						prepC3D.setString(9, primaryDateTime);
+						prepC3D.setString(10, subjectGuid);
+						prepC3D.setString(11, subjectMRN);
+						prepC3D.setString(12, labTestCode);
+						prepC3D.setString(13, dateCreated);
+						prepC3D.setString(14, dateModified);
+						prepC3D.setString(15, labTestReportedDate);
+						prepC3D.setString(16, queryDate);
+						prepC3D.setString(17, extractDate);
+						prepC3D.setString(18, observNote);
 						prepC3D.executeUpdate();
 					}
 				}
@@ -360,6 +344,7 @@ public class BTRISDataExtractorC3D {
 				e.printStackTrace();
 				System.out.println(eventGuid + "'");
 				System.out.println(observGuid + "'");
+				System.out.println(C3DAncestor + "'");
 				System.out.println(observNameConcept + "'");
 				System.out.println(observName + "'");
 				System.out.println(observValueText + "'");
@@ -390,8 +375,11 @@ public class BTRISDataExtractorC3D {
 				} catch (Exception e) {
 				}
 		}
+		System.out.println("Finished getting data from BTRIS and inserting into BTRIS_LAB_TEST_RESULTS");
+
 		return totalResultsRecords;
 	}
+	
 
 	private static void executeExtraction() {
 
@@ -410,18 +398,25 @@ public class BTRISDataExtractorC3D {
 		newQueryDate.set(Calendar.SECOND, 0);
 		newQueryDate.set(Calendar.MILLISECOND, 0);
 
-		System.out.println("Query BTRIS Data from : " + newQueryDate.getTime());
+		if (extractType.equalsIgnoreCase("INCREMENTAL")) {
+			System.out.println("Query BTRIS Data from : " + newQueryDate.getTime());
+		}
 
 		System.out.println();
 		ExtractLog extractLog = new ExtractLog();
 		extractLog.setStartDt(dateStart);
 		extractLog.setQueryDt(dateFormat.format(newQueryDate.getTime()));
 		extractLog.setExtractType(extractType);
+		extractLog.setMRNs(MRNs);
+		
 		extractLog.setOutputType(outputType);
-
+		if (MRNs.length() > 0 ) {
+			System.out.println("Query only the following MRNs: " + MRNs);
+		}
+		
 		System.out.println("Writing " + extractType + " Test Results to "
 				+ outputType);
-		extractLog.setResultCnt(getWriteLabResults(extractType, outputType,
+		extractLog.setResultCnt(getWriteLabResults(extractType, outputType, MRNs,
 				newQueryDate));
 
 		if (submitPushC3DJob.equalsIgnoreCase("TRUE")) {
@@ -510,6 +505,7 @@ public class BTRISDataExtractorC3D {
 		passwordC3D = extractProps.getProperty(Constants.NameControlC3DPass);
 		extractType = extractProps.getProperty(Constants.NameControlCumulativeDay);
 		offsetDaysStr = extractProps.getProperty(Constants.NameControlQOffsetDays);
+		MRNs = extractProps.getProperty(Constants.NameControlMRNs);
 		outputType = extractProps.getProperty(Constants.NameControlOutputType);
 		submitPushC3DJob = extractProps.getProperty(Constants.NameControlSubmitPushC3DJob);
 		// check for command line arguements
@@ -556,9 +552,50 @@ public class BTRISDataExtractorC3D {
 		if ((passwordC3D == null) || "".equals(passwordC3D))
 			passwordC3D = getPromptedString("C3D password required: ", true);
 
+		    Connection conBTRIS = null;
+			PreparedStatement stmtBTRIS = null;
+			ResultSet rsBTRIS = null;
+			String holdQuery = null;
+			String tStatus = null;
+			
+			try { 
+				conBTRIS = DriverManager.getConnection(urlBTRIS + ";user="
+					+ userBTRIS + ";password=" + passwordBTRIS);
+			   holdQuery = "select isnull(Status,'Not Ready') from BTRIS_Extractor_Status where cast(StatusUpdatedDate as Date) = cast(getdate() as Date)";
+			   stmtBTRIS = conBTRIS.prepareStatement(holdQuery);
+	
+			   rsBTRIS = stmtBTRIS.executeQuery();
+			   } catch (Exception e) {
+				e.printStackTrace();
+				System.exit(1);
+			
+	        	}
+			try { if (!rsBTRIS.next())
 
-		executeExtraction();
+				{
+					System.out.println("tStatus = Not Ready");
+					System.exit(1);
+				}	
+				else 
+				{
+					//rsBTRIS.next(); 
+					tStatus = rsBTRIS.getString(1);
+				}
+				} catch (Exception e) {
+					e.printStackTrace();
+					System.exit(1);
+			      }
+		System.out.println("tStatus=" + tStatus )	;
+        if (tStatus.equals("Ready")) {
+			executeExtraction();
+			System.out.println("BTRIS Status is Ready!!!");
 
+        }
+		else {
+			System.out.println("BTRIS Status not Ready yet!!!");
+        }
+
+	
 	}
 
 }
