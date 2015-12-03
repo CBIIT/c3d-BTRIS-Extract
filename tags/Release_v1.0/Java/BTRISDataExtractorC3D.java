@@ -21,6 +21,7 @@ public class BTRISDataExtractorC3D {
     private static String urlBTRIS, userBTRIS, passwordBTRIS = null;
     private static String urlC3D, userC3D, passwordC3D = null;
 
+    //
     private static void printProgBar(int percent){
         // prodedure gives a status bar of sorts
         StringBuilder bar = new StringBuilder("\r[");

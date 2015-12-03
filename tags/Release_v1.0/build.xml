@@ -11,7 +11,7 @@
 	<property name="dist.dir" value="dist" />
 	<property name="resource.dir" value="resources" />
 	<property name="dbScript.dir" value="Oracle\dbupdates" />
-		
+
 
 
 	<path id="class.path">
@@ -27,22 +27,16 @@
 	</target>
 
 
-	<!-- No Longer needed
-	<target name="resources">
-		<copy todir="${build.dir}" includeEmptyDirs="no">
-			<fileset dir="${resource.dir}">
-				<patternset>
-					<include name="**/*.bat" />
-					<include name="**/*.properties" />
-				</patternset>
-			</fileset>
-		</copy>
-	</target>-->
+	<!-- No Longer needed <target name="resources"> <copy todir="${build.dir}" 
+		includeEmptyDirs="no"> <fileset dir="${resource.dir}"> <patternset> <include 
+		name="**/*.bat" /> <include name="**/*.properties" /> </patternset> </fileset> 
+		</copy> </target> -->
 
 
 	<!-- Normal build of application -->
 	<target name="compile" depends="prepare">
-		<javac srcdir="${src.dir}" destdir="${build.dir}" debug="true" debuglevel="lines,vars,source">
+		<javac srcdir="${src.dir}" destdir="${build.dir}" debug="true"
+			debuglevel="lines,vars,source">
 			<classpath refid="class.path" />
 		</javac>
 	</target>
@@ -64,8 +58,8 @@
 		<delete dir="${dist.dir}" />
 		<mkdir dir="${dist.dir}" />
 
-		<jar basedir="${build.dir}" destfile="${dist.dir}/${project.jar.file}" 
-			includes="*.class" manifest="${resource.dir}/Manifest.txt"> 
+		<jar basedir="${build.dir}" destfile="${dist.dir}/${project.jar.file}"
+			includes="*.class" manifest="${resource.dir}/Manifest.txt">
 		</jar>
 
 	</target>
@@ -76,26 +70,26 @@
 		<mkdir dir="${dist.dir}" />
 
 	</target>
-	
+
 	<target name="zipdb" description="Create zip of database object scripts">
 
 		<zip basedir="${dbScript.dir}" destfile="${dist.dir}/${dbscript.zip.file}">
-	    </zip>
+		</zip>
 
 	</target>
 
 	<target name="zipdeploy" description="Create zip of WAR and supporting ZIPs">
 
 		<zip destfile="${dist.dir}/${deploy.zip.file}">
-			<zipfileset dir="${dist.dir}"     includes="${project.jar.file}"/>
-    		<zipfileset dir="${dist.dir}"     includes="${dbscript.zip.file}"/>
-    		<zipfileset dir="${resource.dir}" includes="BDE.properties, Run_BTRIS_JAR.bat"/>
-     		<zipfileset dir="lib" includes="*.jar"/>
-	    </zip>
+			<zipfileset dir="${dist.dir}" includes="${project.jar.file}" />
+			<zipfileset dir="${dist.dir}" includes="${dbscript.zip.file}" />
+			<zipfileset dir="${resource.dir}" includes="BDE.properties, Run_BTRIS_JAR.bat" />
+			<zipfileset dir="lib" includes="*.jar" />
+		</zip>
 
 	</target>
 
-	<!-- Build project and create distribution-->
+	<!-- Build project and create distribution -->
 	<target name="all" depends="project" />
 
 </project>
